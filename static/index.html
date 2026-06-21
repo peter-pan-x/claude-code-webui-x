@@ -538,6 +538,11 @@
     </span>
   </div>
 
+  <div class="debug-panel" id="debugPanel" style="display:block;border-top:1px solid #333;background:#0a0a0a;max-height:160px;overflow-y:auto;flex-shrink:0;font-family:Consolas,monospace;font-size:10px;padding:4px 8px">
+    <div style="color:#888;cursor:pointer;margin-bottom:2px" onclick="this.parentElement.style.display="none"">[-] Debug Log (click to hide)</div>
+    <div id="debugLog" style="color:#aaa;line-height:1.4;white-space:pre-wrap"></div>
+  </div>
+
   <div class="input-area" id="inputArea">
     <textarea id="messageInput" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1" onkeydown="handleInputKey(event)" oninput="autoResizeInput()"></textarea>
     <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>发送</button>
@@ -644,10 +649,10 @@ async function poll() {
     }
 
     // Only refresh if viewing a session AND its file size changed
-    if (state.currentViewSessionId) {
+    if (state.currentViewSessionId) { dlog("poll", "checking sid=" + state.currentViewSessionId.slice(0,8));
       const newSize = d.sessionSizes?.[state.currentViewSessionId];
       const oldSize = state.lastSessionSizes[state.currentViewSessionId];
-      if (newSize !== undefined && newSize !== oldSize) {
+      if (newSize !== undefined && newSize !== oldSize) { dlog("poll", "SIZE CHANGED: " + oldSize + " -> " + newSize + " (delta=" + (newSize - (oldSize||0)) + ")");
         state.lastSessionSizes[state.currentViewSessionId] = newSize;
         await loadConversation(state.currentViewSessionId, true);
       }
@@ -716,11 +721,12 @@ async function selectSession(sessionId) {
 }
 
 async function loadConversation(sessionId, silent = false) {
+  dlog("loadConv", "sid=" + sessionId.slice(0,8) + " silent=" + silent + " lastCnt=" + state.lastMsgCount + " sending=" + state.sending);
   try {
     const data = await API(`/api/sessions/${sessionId}?limit=500`);
     // Skip re-render if silent and count unchanged (avoids flicker)
-    if (silent && data.count === state.lastMsgCount) return;
-    state.lastMsgCount = data.count;
+    if (silent && data.count === state.lastMsgCount) { dlog("loadConv", "SKIP: count unchanged (" + data.count + ")"); return; }
+    dlog("loadConv", "RENDER: count=" + data.count + " oldLastCnt=" + state.lastMsgCount); state.lastMsgCount = data.count;
 
     const title = data.sessionId?.slice(0, 12) || 'Conversation';
     document.getElementById('sessionTitle').textContent = title;
@@ -735,6 +741,7 @@ async function loadConversation(sessionId, silent = false) {
 }
 
 function renderMessages(messages) {
+  dlog("renderMsgs", "rendering " + messages.length + " messages");
   const container = document.getElementById('chatContainer');
   if (!messages.length) {
     container.innerHTML = '<div class="chat-empty"><div class="icon">📭</div><div class="hint">空对话</div></div>';
@@ -825,6 +832,26 @@ function extractText(content) {
   return '';
 }
 
+// ── Debug log ────────────────────────────────────────────────────────
+let _logLines = [];
+function dlog(tag, msg) {
+  const ts = new Date().toLocaleTimeString();
+  const line = '[' + ts + '] ' + tag + ': ' + msg;
+  _logLines.push(line);
+  if (_logLines.length > 100) _logLines.shift();
+  const el = document.getElementById('debugLog');
+  if (el) el.textContent = _logLines.slice(-50).join('
+');
+  console.log('[DEBUG]', line);
+}
+function toggleDebug() {
+  const p = document.getElementById('debugPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'd') { e.preventDefault(); toggleDebug(); }
+});
+
 // ── Send message ──────────────────────────────────────────────────────
 function handleInputKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -840,7 +867,8 @@ function autoResizeInput() {
 }
 
 async function sendMessage() {
-  if (state.sending) return;
+  dlog("send", "START: msg=" + document.getElementById("messageInput").value.trim().slice(0,50));
+  if (state.sending) { dlog("send", "BLOCKED: already sending"); return; }
   const ta = document.getElementById('messageInput');
   const message = ta.value.trim();
   if (!message) return;
@@ -862,9 +890,10 @@ async function sendMessage() {
   showOptimisticMessage(message);
 
   // Try direct CLI send first
-  const direct = await sendToCli(message);
-  if (direct?.direct) {
-    // Message sent directly to managed CLI — poll for JSONL updates
+  const direct_rs = await sendToCli(message); dlog("send", "sendToCli result: " + JSON.stringify(direct_rs));
+  if (direct_rs?.direct) {
+    dlog("send", "direct send OK, starting pollForResponse");
+    // Message sent directly
     state.sending = false;
     sendBtn.disabled = false;
     sendBtn.textContent = '发送';
@@ -970,7 +999,7 @@ function filterSessions() {
 }
 
 function refreshCurrent() {
-  if (state.currentViewSessionId) {
+  if (state.currentViewSessionId) { dlog("poll", "checking sid=" + state.currentViewSessionId.slice(0,8));
     loadConversation(state.currentViewSessionId);
   }
   loadSessions();
