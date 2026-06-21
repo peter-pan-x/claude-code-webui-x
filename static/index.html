@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code Desktop</title>
+<style>
+  :root {
+    --bg: #1a1b1e;
+    --sidebar-bg: #141517;
+    --card-bg: #1e1f23;
+    --border: #2d2e33;
+    --text: #e4e4e7;
+    --text-muted: #8b8b90;
+    --accent: #d97706;
+    --accent-dim: #92400e;
+    --user-bubble: #1d3a5c;
+    --assistant-bubble: #1e1f23;
+    --thinking-bg: #1a1b1e;
+    --thinking-border: #2d2e33;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────── */
+  .sidebar {
+    width: 320px;
+    min-width: 280px;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    resize: horizontal;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-header .logo {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .sidebar-header .active-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-left: auto;
+    animation: pulse 2s infinite;
+  }
+  .sidebar-header .active-dot.busy { background: var(--yellow); }
+  .sidebar-header .active-dot.offline { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .sidebar-search {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-search input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .sidebar-search input:focus { border-color: var(--accent); }
+
+  .session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+  }
+  .session-list::-webkit-scrollbar { width: 4px; }
+  .session-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .session-item {
+    padding: 12px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin: 2px 8px;
+    border: 1px solid transparent;
+  }
+  .session-item:hover { background: var(--card-bg); }
+  .session-item.active {
+    background: var(--card-bg);
+    border-color: var(--accent-dim);
+  }
+  .session-item .title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .session-item .meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 12px;
+  }
+  .session-item .meta span { white-space: nowrap; }
+
+  .session-list-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ── Main ────────────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .main-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--sidebar-bg);
+    flex-shrink: 0;
+  }
+  .main-header .session-title {
+    font-size: 15px;
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .main-header .badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+  }
+  .model-selector {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    outline: none;
+  }
+  .model-selector:focus { border-color: var(--accent); }
+  .btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); background: var(--bg); }
+  .btn.accent { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+  .btn.accent:hover { background: #b45309; }
+
+  .refresh-indicator {
+    font-size: 10px;
+    color: var(--text-muted);
+    animation: spin 1s linear infinite;
+    display: none;
+  }
+  .refresh-indicator.show { display: inline; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Chat ────────────────────────────────────────────── */
+  .chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .chat-container::-webkit-scrollbar { width: 6px; }
+  .chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    max-width: 85%;
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    position: relative;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .msg.user {
+    align-self: flex-end;
+    background: var(--user-bubble);
+    border-bottom-right-radius: 4px;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--assistant-bubble);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+  .msg .role-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    opacity: 0.6;
+  }
+  .msg .content p { margin: 4px 0; }
+  .msg .content pre {
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin: 8px 0;
+    border: 1px solid var(--border);
+  }
+  .msg .content code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .msg .content pre code { background: none; padding: 0; }
+
+  /* thinking block */
+  .thinking-block {
+    background: var(--thinking-bg);
+    border: 1px solid var(--thinking-border);
+    border-left: 3px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    max-height: 200px;
+    overflow-y: auto;
+    cursor: pointer;
+    transition: max-height 0.3s;
+  }
+  .thinking-block.expanded { max-height: 2000px; }
+  .thinking-block summary {
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+    font-style: normal;
+    margin-bottom: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* tool use */
+  .tool-block {
+    background: #0d3320;
+    border: 1px solid #165534;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .tool-block .tool-name {
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 4px;
+  }
+  .tool-block .tool-result {
+    color: var(--text-muted);
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  /* system event */
+  .system-event {
+    align-self: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 12px;
+    border-radius: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    max-width: 90%;
+    text-align: center;
+  }
+
+  /* empty state */
+  .chat-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    color: var(--text-muted);
+  }
+  .chat-empty .icon { font-size: 48px; opacity: 0.3; }
+  .chat-empty .hint { font-size: 14px; }
+
+  /* ── input area ──────────────────────────────────────── */
+  .input-area {
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    gap: 10px;
+    background: var(--sidebar-bg);
+    flex-shrink: 0;
+  }
+  .input-area textarea {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    resize: none;
+    outline: none;
+    min-height: 80px;
+    max-height: 240px;
+    line-height: 1.5;
+    transition: border-color 0.2s;
+  }
+  .input-area textarea:focus { border-color: var(--accent); }
+  .input-area textarea::placeholder { color: var(--text-muted); }
+  .input-area .send-btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #000;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    align-self: flex-end;
+  }
+  .input-area .send-btn:hover { background: #b45309; }
+  .input-area .send-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .sending-indicator {
+    font-size: 11px;
+    color: var(--yellow);
+    margin-left: 8px;
+    animation: pulse 1.5s infinite;
+  }
+
+  /* ── status bar ──────────────────────────────────────── */
+  .status-bar {
+    padding: 6px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+  .status-bar .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .status-bar .status-dot.online { background: var(--green); }
+  .status-bar .status-dot.busy { background: var(--yellow); }
+  .status-bar .status-dot.offline { background: var(--red); }
+
+  /* ── CLI output panel ────────────────────────────────── */
+  .cli-panel {
+    border-top: 1px solid var(--border);
+    background: #0a0a0b;
+    flex-shrink: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .cli-panel.show { display: block; }
+  .cli-panel-header {
+    padding: 4px 16px;
+    background: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .cli-panel-header .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .cli-panel-header .dot.on { background: var(--green); }
+  .cli-panel-header .dot.off { background: var(--red); }
+  .cli-line { padding: 1px 16px; white-space: pre-wrap; word-break: break-all; }
+  .cli-line.stdout { color: var(--text); }
+  .cli-line.stderr { color: var(--red); }
+  .cli-line.prompt { color: var(--yellow); font-weight: 600; }
+
+  /* permission prompt bar */
+  .permission-bar {
+    padding: 6px 16px;
+    background: #332208;
+    border-top: 1px solid #664411;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .permission-bar.show { display: flex; }
+  .permission-bar.confirm { background: #1a2233; border-color: #334466; }
+  .permission-bar.choice { background: #1a2e1a; border-color: #335533; }
+  .permission-bar .prompt-text { flex: 1; color: var(--yellow); font-size: 12px; }
+  .permission-bar .approve-btn {
+    padding: 5px 14px; border-radius: 6px; border: none;
+    background: var(--green); color: #000; font-weight: 600;
+    cursor: pointer; font-size: 11px;
+  }
+  .permission-bar .deny-btn {
+    padding: 5px 14px; border-radius: 6px; border: none;
+    background: var(--red); color: #fff; font-weight: 600;
+    cursor: pointer; font-size: 11px;
+  }
+  .permission-bar .input-inline {
+    flex: 1; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 12px;
+  }
+
+  /* ── responsive ──────────────────────────────────────── */
+  @media (max-width: 700px) {
+    .sidebar { width: 100%; min-width: unset; }
+    .main { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <span class="logo">⚡ Claude Code</span>
+    <span class="active-dot online" id="activeDot" title="CLI status"></span>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="searchInput" placeholder="搜索会话..." oninput="filterSessions()">
+  </div>
+  <div class="session-list" id="sessionList">
+    <div class="session-list-empty">加载中...</div>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main" id="main">
+  <div class="main-header">
+    <span class="session-title" id="sessionTitle">选择一个会话</span>
+    <span class="badge" id="msgCount">0 msgs</span>
+    <button class="btn" onclick="refreshCurrent()" title="刷新当前会话">刷新</button>
+    <button class="btn" id="cliStartBtn" onclick="toggleManagedCli()" title="启动/停止托管的 Claude Code CLI">启动CLI</button>
+  </div>
+
+  <div class="chat-container" id="chatContainer">
+    <div class="chat-empty">
+      <div class="icon">💬</div>
+      <div class="hint">从左侧选择一个会话查看对话</div>
+    </div>
+  </div>
+
+  <div class="cli-panel" id="cliPanel">
+    <div class="cli-panel-header" onclick="toggleCliPanel()">
+      <span class="dot off" id="cliDot"></span>
+      <span>CLI 输出</span>
+      <span style="margin-left:auto;font-size:10px" id="cliLineCount">0 行</span>
+    </div>
+    <div id="cliOutput"></div>
+  </div>
+
+  <div class="permission-bar" id="permissionBar">
+    <span class="prompt-text" id="permissionText">...</span>
+    <span id="promptActions">
+      <button class="approve-btn" onclick="answerPrompt('y')">✓ 是</button>
+      <button class="deny-btn" onclick="answerPrompt('n')">✗ 否</button>
+    </span>
+    <span id="promptInput" style="display:none;flex:1;display:none;gap:6px">
+      <input class="input-inline" id="promptTextInput" placeholder="输入回复..." onkeydown="if(event.key==='Enter')answerPrompt(document.getElementById('promptTextInput').value)">
+      <button class="approve-btn" onclick="answerPrompt(document.getElementById('promptTextInput').value)">发送</button>
+    </span>
+  </div>
+
+  <div class="input-area" id="inputArea">
+    <textarea id="messageInput" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1" onkeydown="handleInputKey(event)" oninput="autoResizeInput()"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>发送</button>
+  </div>
+
+  <div class="model-bar" style="padding:8px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--sidebar-bg);flex-shrink:0;font-size:12px">
+    <span style="color:var(--text-muted);white-space:nowrap">模型:</span>
+    <select class="model-selector" id="modelSelector" onchange="switchModel()" style="flex:1;max-width:300px">
+      <option value="">加载中...</option>
+    </select>
+  </div>
+
+  <div class="status-bar">
+    <span><span class="status-dot online" id="statusDot"></span> <span id="statusText">就绪</span></span>
+    <span id="statusModel">--</span>
+    <span id="statusSend" style="display:none;color:var(--yellow)">⟳ 发送中...</span>
+    <span id="statusPoll" style="margin-left:auto">自动同步中</span>
+  </div>
+</main>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────
+let state = {
+  sessions: [],
+  activeSessionId: null,
+  currentViewSessionId: null,
+  currentModel: '',
+  availableModels: [],
+  pollInterval: null,
+  lastMsgCount: 0,        // track message count to avoid flicker
+  lastSessionSizes: {},    // track file sizes for change detection
+  sending: false,
+};
+
+// ── API ──────────────────────────────────────────────────────────────
+const API = (path, opts = {}) =>
+  fetch(path, opts).then(r => r.ok ? r.json() : Promise.reject(r));
+
+// ── Init ─────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadSessions(), loadSettings()]);
+  checkActive();
+  state.pollInterval = setInterval(poll, 3000);
+}
+
+async function loadSessions() {
+  try {
+    const data = await API('/api/sessions');
+    state.sessions = data.sessions || [];
+    state.activeSessionId = data.activeSessionId;
+    renderSessionList();
+    updateActiveDot();
+  } catch (e) {
+    console.error('loadSessions:', e);
+  }
+}
+
+async function loadSettings() {
+  try {
+    const s = await API('/api/settings');
+    state.currentModel = s.model;
+    state.availableModels = [
+      { label: 'Default: ' + s.model, value: s.model },
+    ];
+    if (s.opusModel && s.opusModel !== s.model)
+      state.availableModels.push({ label: 'Opus: ' + s.opusModel, value: s.opusModel });
+    if (s.sonnetModel && s.sonnetModel !== s.model)
+      state.availableModels.push({ label: 'Sonnet: ' + s.sonnetModel, value: s.sonnetModel });
+    if (s.haikuModel && s.haikuModel !== s.model)
+      state.availableModels.push({ label: 'Haiku: ' + s.haikuModel, value: s.haikuModel });
+
+    renderModelSelector();
+    document.getElementById('statusModel').textContent = s.model;
+  } catch (e) {
+    console.error('loadSettings:', e);
+  }
+}
+
+async function checkActive() {
+  try {
+    const d = await API('/api/active');
+    if (d.active) {
+      document.getElementById('statusText').textContent =
+        'CLI: ' + (d.active.status || 'running') + ' (pid:' + d.active.pid + ')';
+      const dot = document.getElementById('statusDot');
+      dot.className = 'status-dot ' + (d.active.status === 'busy' ? 'busy' : 'online');
+    }
+  } catch (e) {}
+}
+
+async function poll() {
+  try {
+    const d = await API('/api/poll');
+    const newActiveId = d.activeSessionId;
+    updateActiveDot(d.activeStatus);
+
+    // If active session changed, reload list and maybe switch view
+    if (newActiveId !== state.activeSessionId) {
+      state.activeSessionId = newActiveId;
+      await loadSessions();
+      if (!state.currentViewSessionId && newActiveId) {
+        selectSession(newActiveId);
+      }
+    }
+
+    // Only refresh if viewing a session AND its file size changed
+    if (state.currentViewSessionId) {
+      const newSize = d.sessionSizes?.[state.currentViewSessionId];
+      const oldSize = state.lastSessionSizes[state.currentViewSessionId];
+      if (newSize !== undefined && newSize !== oldSize) {
+        state.lastSessionSizes[state.currentViewSessionId] = newSize;
+        await loadConversation(state.currentViewSessionId, true);
+      }
+      // Also update sizes for all sessions
+      if (d.sessionSizes) {
+        state.lastSessionSizes = { ...state.lastSessionSizes, ...d.sessionSizes };
+      }
+    }
+  } catch (e) {
+    // silent — don't disturb the user on transient errors
+  }
+}
+
+function updateActiveDot(status) {
+  const dot = document.getElementById('activeDot');
+  dot.className = 'active-dot ' + (status === 'busy' ? 'busy' : status ? 'online' : 'offline');
+  dot.title = status === 'busy' ? 'CLI忙碌中' : status ? 'CLI在线' : 'CLI未检测到';
+}
+
+// ── Render ───────────────────────────────────────────────────────────
+function renderSessionList(filter = '') {
+  const el = document.getElementById('sessionList');
+  const sessions = filter
+    ? state.sessions.filter(s =>
+        (s.firstPrompt || s.summary || '').toLowerCase().includes(filter.toLowerCase()))
+    : state.sessions;
+
+  if (!sessions.length) {
+    el.innerHTML = '<div class="session-list-empty">没有找到会话</div>';
+    return;
+  }
+
+  el.innerHTML = sessions.map(s => {
+    const active = s.sessionId === state.currentViewSessionId ? ' active' : '';
+    const isRunning = s.sessionId === state.activeSessionId ? ' ●' : '';
+    const title = s.summary || s.firstPrompt || s.sessionId?.slice(0, 12) || 'Untitled';
+    const date = formatTime(s.modified || s.created);
+    const count = s.messageCount ? `${s.messageCount} 条` : '';
+    const size = s.fileSize ? formatSize(s.fileSize) : '';
+    return `
+      <div class="session-item${active}" onclick="selectSession('${s.sessionId}')" title="${title}">
+        <div class="title">${isRunning ? '<span style="color:var(--green)">●</span> ' : ''}${escHtml(title)}</div>
+        <div class="meta">
+          <span>${date}</span>
+          ${count ? `<span>${count}</span>` : ''}
+          ${size ? `<span>${size}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderModelSelector() {
+  const sel = document.getElementById('modelSelector');
+  sel.innerHTML = state.availableModels.map(m =>
+    `<option value="${m.value}" ${m.value === state.currentModel ? 'selected' : ''}>${m.label}</option>`
+  ).join('');
+}
+
+// ── Actions ──────────────────────────────────────────────────────────
+async function selectSession(sessionId) {
+  state.currentViewSessionId = sessionId;
+  state.lastMsgCount = 0; // force fresh render
+  document.getElementById('sendBtn').disabled = false;
+  renderSessionList(document.getElementById('searchInput').value);
+  await loadConversation(sessionId);
+}
+
+async function loadConversation(sessionId, silent = false) {
+  try {
+    const data = await API(`/api/sessions/${sessionId}?limit=500`);
+    // Skip re-render if silent and count unchanged (avoids flicker)
+    if (silent && data.count === state.lastMsgCount) return;
+    state.lastMsgCount = data.count;
+
+    const title = data.sessionId?.slice(0, 12) || 'Conversation';
+    document.getElementById('sessionTitle').textContent = title;
+    document.getElementById('msgCount').textContent = data.count + ' msgs';
+    renderMessages(data.messages);
+  } catch (e) {
+    if (!silent) {
+      document.getElementById('chatContainer').innerHTML =
+        '<div class="chat-empty"><div class="icon">⚠️</div><div class="hint">加载失败</div></div>';
+    }
+  }
+}
+
+function renderMessages(messages) {
+  const container = document.getElementById('chatContainer');
+  if (!messages.length) {
+    container.innerHTML = '<div class="chat-empty"><div class="icon">📭</div><div class="hint">空对话</div></div>';
+    return;
+  }
+
+  const fragments = [];
+  let lastRole = '';
+
+  for (const m of messages) {
+    const type = m.type;
+    if (type === 'user' && m.message?.role === 'user') {
+      lastRole = 'user';
+      const text = extractText(m.message.content);
+      if (text.trim()) {
+        fragments.push(`<div class="msg user">
+          <div class="role-label">You</div>
+          <div class="content">${mdToHtml(text)}</div>
+        </div>`);
+      }
+    } else if (type === 'assistant' && m.message?.role === 'assistant') {
+      lastRole = 'assistant';
+      const blocks = renderAssistantContent(m.message.content, m.uuid);
+      if (blocks) {
+        fragments.push(`<div class="msg assistant">
+          <div class="role-label">Assistant ${m.message.model ? '· ' + m.message.model : ''}</div>
+          <div class="content">${blocks}</div>
+        </div>`);
+      }
+    } else if (type === 'attachment' || type === 'mode' || type === 'permission-mode' || type === 'ai-title' || type === 'file-history-snapshot') {
+      // skip system events or show compact
+      if (type === 'ai-title') {
+        fragments.push(`<div class="system-event">📌 ${escHtml(m.aiTitle || '')}</div>`);
+      }
+    } else if (type === 'user' && m.message?.role !== 'user') {
+      // tool result user message
+      const content = m.message?.content;
+      if (Array.isArray(content)) {
+        for (const c of content) {
+          if (c.type === 'tool_result' && c.content) {
+            const text = typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
+            const short = text.length > 300 ? text.slice(0, 300) + '...' : text;
+            fragments.push(`<div class="tool-block">
+              <div class="tool-name">📥 tool_result · ${escHtml(c.tool_use_id?.slice(0,16) || '')}</div>
+              <div class="tool-result">${escHtml(short)}</div>
+            </div>`);
+          }
+        }
+      }
+    }
+  }
+
+  container.innerHTML = fragments.join('\n');
+  // scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderAssistantContent(content, uuid) {
+  if (!Array.isArray(content)) return '';
+  return content.map(c => {
+    if (c.type === 'text') {
+      return mdToHtml(c.text || '');
+    } else if (c.type === 'thinking') {
+      const thinking = escHtml(c.thinking || '');
+      return `<details class="thinking-block">
+        <summary>🧠 思考过程 (${thinking.length} chars)</summary>
+        <div>${thinking}</div>
+      </details>`;
+    } else if (c.type === 'tool_use') {
+      const input = JSON.stringify(c.input || {}, null, 2);
+      return `<div class="tool-block">
+        <div class="tool-name">🔧 ${escHtml(c.name)}</div>
+        <div class="tool-result">${escHtml(input.length > 500 ? input.slice(0, 500) + '...' : input)}</div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+}
+
+function extractText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(c => {
+      if (c.type === 'text') return c.text || '';
+      return '';
+    }).join('\n');
+  }
+  return '';
+}
+
+// ── Send message ──────────────────────────────────────────────────────
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResizeInput() {
+  const ta = document.getElementById('messageInput');
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+async function sendMessage() {
+  if (state.sending) return;
+  const ta = document.getElementById('messageInput');
+  const message = ta.value.trim();
+  if (!message) return;
+  if (!state.currentViewSessionId) {
+    alert('请先在左侧选择一个会话');
+    return;
+  }
+
+  state.sending = true;
+  const sendBtn = document.getElementById('sendBtn');
+  const statusEl = document.getElementById('statusSend');
+  sendBtn.disabled = true;
+  sendBtn.textContent = '发送中...';
+  statusEl.style.display = 'inline';
+  ta.value = '';
+  ta.style.height = 'auto';
+
+  // Optimistically show user message
+  showOptimisticMessage(message);
+
+  // Try direct CLI send first
+  const direct = await sendToCli(message);
+  if (direct?.direct) {
+    // Message sent directly to managed CLI — response comes via WS
+    state.sending = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = '发送';
+    document.getElementById('statusSend').style.display = 'none';
+    ta.focus();
+    return;
+  }
+
+  try {
+    const res = await API(`/api/sessions/${state.currentViewSessionId}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+
+    // Poll for completion (max 2 min)
+    let attempts = 0;
+    while (attempts < 60) {
+      await sleep(2000);
+      try {
+        const job = await API(`/api/jobs/${res.jobId}`);
+        if (job.status === 'done' || job.status === 'error' || job.status === 'timeout') {
+          if (job.status === 'error') {
+            console.error('Send error:', job.error || job.stderr);
+          }
+          break;
+        }
+      } catch (e) { break; }
+      attempts++;
+    }
+
+    // Reload conversation to get the response
+    state.lastMsgCount = 0; // force refresh
+    await loadConversation(state.currentViewSessionId, false);
+    await loadSessions();
+  } catch (e) {
+    console.error('Send failed:', e);
+    alert('消息发送失败，请检查 claude CLI 是否在 PATH 中');
+  }
+
+  state.sending = false;
+  sendBtn.disabled = false;
+  sendBtn.textContent = '发送';
+  statusEl.style.display = 'none';
+  ta.focus();
+}
+
+function showOptimisticMessage(text) {
+  const container = document.getElementById('chatContainer');
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.style.opacity = '0.5';
+  div.innerHTML = `<div class="role-label">You (发送中)</div><div class="content">${mdToHtml(text)}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Model switching ──────────────────────────────────────────────────
+async function switchModel() {
+  const model = document.getElementById('modelSelector').value;
+  if (!model || model === state.currentModel) return;
+  try {
+    await API('/api/settings/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, key: 'ANTHROPIC_MODEL' }),
+    });
+    state.currentModel = model;
+    document.getElementById('statusModel').textContent = model;
+    // brief feedback
+    const btn = document.querySelector('.model-selector');
+    btn.style.borderColor = 'var(--green)';
+    setTimeout(() => btn.style.borderColor = '', 1500);
+  } catch (e) {
+    alert('模型切换失败，请检查 settings.local.json 权限');
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function filterSessions() {
+  renderSessionList(document.getElementById('searchInput').value);
+}
+
+function refreshCurrent() {
+  if (state.currentViewSessionId) {
+    loadConversation(state.currentViewSessionId);
+  }
+  loadSessions();
+  loadSettings();
+  checkActive();
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 86400000) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+    return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  } catch (e) { return ''; }
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + 'KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function mdToHtml(text) {
+  if (!text) return '';
+  let html = escHtml(text);
+  // basic markdown: code blocks
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code class="language-${lang}">${code.trim()}</code></pre>`);
+  // inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // italic
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // newlines
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+  }
+  if (e.ctrlKey && e.key === 'r') {
+    e.preventDefault();
+    refreshCurrent();
+  }
+});
+
+// ── WebSocket / Managed CLI ──────────────────────────────────────────
+let ws = null;
+let cliLines = 0;
+
+function connectWs() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => console.log('WS connected');
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    cliLines++;
+    document.getElementById('cliLineCount').textContent = cliLines + ' 行';
+    const cliOutput = document.getElementById('cliOutput');
+    const cls = msg.type === 'stderr' ? 'stderr' : (msg.promptType ? 'prompt' : 'stdout');
+    cliOutput.innerHTML += `<div class="cli-line ${cls}">${escHtml(msg.text)}</div>`;
+    cliOutput.parentElement.scrollTop = cliOutput.parentElement.scrollHeight;
+
+    // Handle interactive prompts
+    if (msg.promptType) {
+      const bar = document.getElementById('permissionBar');
+      bar.className = 'permission-bar show ' + msg.promptType;
+      document.getElementById('permissionText').textContent = msg.text.slice(0, 300);
+      const actions = document.getElementById('promptActions');
+      const input = document.getElementById('promptInput');
+      if (msg.promptType === 'choice' || msg.promptType === 'question') {
+        actions.style.display = 'none';
+        input.style.display = 'flex';
+        document.getElementById('promptTextInput').value = '';
+        document.getElementById('promptTextInput').focus();
+      } else {
+        input.style.display = 'none';
+        actions.style.display = 'flex';
+      }
+    }
+
+    if (msg.type === 'status') updateCliButton(msg.running);
+  };
+  ws.onclose = () => { ws = null; setTimeout(connectWs, 3000); };
+  ws.onerror = () => ws?.close();
+}
+
+function toggleManagedCli() {
+  if (!state.currentViewSessionId) {
+    alert('请先选择一个会话');
+    return;
+  }
+  fetch('/api/managed/status').then(r => r.json()).then(s => {
+    if (s.running) {
+      // stop
+      fetch('/api/managed/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      }).then(() => updateCliButton(false));
+    } else {
+      // start
+      fetch('/api/managed/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          sessionId: state.currentViewSessionId,
+          cwd: 'C:\\Users\\PETER'
+        }),
+      }).then(() => {
+        updateCliButton(true);
+        document.getElementById('cliPanel').classList.add('show');
+        document.getElementById('cliDot').className = 'dot on';
+        document.getElementById('cliOutput').innerHTML = '';
+        cliLines = 0;
+      });
+    }
+  });
+}
+
+function updateCliButton(running) {
+  const btn = document.getElementById('cliStartBtn');
+  btn.textContent = running ? '停止CLI' : '启动CLI';
+  btn.className = running ? 'btn accent' : 'btn';
+}
+
+function answerPrompt(response) {
+  fetch('/api/managed/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'approve', response }),
+  });
+  document.getElementById('permissionBar').classList.remove('show');
+}
+
+// send directly to managed CLI if running, otherwise use -p send
+async function sendToCli(text) {
+  const status = await fetch('/api/managed/status').then(r => r.json());
+  if (status.running) {
+    // Direct stdin injection
+    await fetch('/api/managed/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'input', text }),
+    });
+    return { direct: true };
+  }
+  // Fallback: spawn claude -p
+  return null;
+}
+
+function toggleCliPanel() {
+  document.getElementById('cliPanel').classList.toggle('show');
+}
+
+// ── Start ────────────────────────────────────────────────────────────
+connectWs();
+init();
+</script>
+</body>
+</html>
