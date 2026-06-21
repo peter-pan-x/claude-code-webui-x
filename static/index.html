@@ -572,9 +572,10 @@ let state = {
   currentModel: '',
   availableModels: [],
   pollInterval: null,
-  lastMsgCount: 0,        // track message count to avoid flicker
-  lastSessionSizes: {},    // track file sizes for change detection
+  lastMsgCount: 0,
+  lastSessionSizes: {},
   sending: false,
+  loadSeq: 0,           // monotonic counter to ignore stale API responses
 };
 
 // ── API ──────────────────────────────────────────────────────────────
@@ -648,15 +649,18 @@ async function poll() {
       }
     }
 
+    // Skip polling while user is sending a message
+    if (state.sending) { dlog("poll", "SKIP: sending in progress"); return; }
     // Only refresh if viewing a session AND its file size changed
-    if (state.currentViewSessionId) { dlog("poll", "checking sid=" + state.currentViewSessionId.slice(0,8));
+    if (state.currentViewSessionId) {
+      dlog("poll", "checking sid=" + state.currentViewSessionId.slice(0,8) + " sizes=" + (d.sessionSizes?.[state.currentViewSessionId]||'?'));
       const newSize = d.sessionSizes?.[state.currentViewSessionId];
       const oldSize = state.lastSessionSizes[state.currentViewSessionId];
-      if (newSize !== undefined && newSize !== oldSize) { dlog("poll", "SIZE CHANGED: " + oldSize + " -> " + newSize + " (delta=" + (newSize - (oldSize||0)) + ")");
+      if (newSize !== undefined && newSize !== oldSize) {
+        dlog("poll", "SIZE CHANGED: " + (oldSize||0) + " -> " + newSize + " (delta=" + (newSize - (oldSize||0)) + ")");
         state.lastSessionSizes[state.currentViewSessionId] = newSize;
         await loadConversation(state.currentViewSessionId, true);
       }
-      // Also update sizes for all sessions
       if (d.sessionSizes) {
         state.lastSessionSizes = { ...state.lastSessionSizes, ...d.sessionSizes };
       }
@@ -721,12 +725,21 @@ async function selectSession(sessionId) {
 }
 
 async function loadConversation(sessionId, silent = false) {
-  dlog("loadConv", "sid=" + sessionId.slice(0,8) + " silent=" + silent + " lastCnt=" + state.lastMsgCount + " sending=" + state.sending);
+  const mySeq = ++state.loadSeq;
+  dlog("loadConv", "seq=" + mySeq + " sid=" + sessionId.slice(0,8) + " silent=" + silent + " lastCnt=" + state.lastMsgCount);
   try {
     const data = await API(`/api/sessions/${sessionId}?limit=500`);
-    // Skip re-render if silent and count unchanged (avoids flicker)
-    if (silent && data.count === state.lastMsgCount) { dlog("loadConv", "SKIP: count unchanged (" + data.count + ")"); return; }
-    dlog("loadConv", "RENDER: count=" + data.count + " oldLastCnt=" + state.lastMsgCount); state.lastMsgCount = data.count;
+    // Reject stale responses
+    if (mySeq !== state.loadSeq && state.loadSeq > mySeq + 1) {
+      dlog("loadConv", "STALE seq=" + mySeq + " (current=" + state.loadSeq + ") — discarding");
+      return;
+    }
+    if (silent && data.count === state.lastMsgCount) {
+      dlog("loadConv", "SKIP: count unchanged (" + data.count + ")");
+      return;
+    }
+    dlog("loadConv", "RENDER seq=" + mySeq + " count=" + data.count);
+    state.lastMsgCount = data.count;
 
     const title = data.sessionId?.slice(0, 12) || 'Conversation';
     document.getElementById('sessionTitle').textContent = title;
@@ -840,8 +853,7 @@ function dlog(tag, msg) {
   _logLines.push(line);
   if (_logLines.length > 100) _logLines.shift();
   const el = document.getElementById('debugLog');
-  if (el) el.textContent = _logLines.slice(-50).join('
-');
+  if (el) el.textContent = _logLines.slice(-50).join('\n');
   console.log('[DEBUG]', line);
 }
 function toggleDebug() {
@@ -901,12 +913,13 @@ async function sendMessage() {
     ta.focus();
     // Poll for response (file size change) over next 30s
     let polls = 0;
+    const baseSize = state.lastSessionSizes[state.currentViewSessionId] || 0;
     const pollForResponse = async () => {
-      if (polls++ > 15) return;
+      if (polls++ > 15) { dlog("send", "pollForResponse timeout after 30s"); return; }
       const d = await API('/api/poll');
-      const newSize = d.sessionSizes?.[state.currentViewSessionId];
-      const oldSize = state.lastSessionSizes[state.currentViewSessionId];
-      if (newSize !== oldSize) {
+      const newSize = d.sessionSizes?.[state.currentViewSessionId] || 0;
+      if (newSize > baseSize) {
+        dlog("send", "pollForResponse GOT RESPONSE: size " + baseSize + " -> " + newSize);
         state.lastSessionSizes[state.currentViewSessionId] = newSize;
         state.lastMsgCount = 0;
         await loadConversation(state.currentViewSessionId, false);
@@ -999,7 +1012,8 @@ function filterSessions() {
 }
 
 function refreshCurrent() {
-  if (state.currentViewSessionId) { dlog("poll", "checking sid=" + state.currentViewSessionId.slice(0,8));
+  if (state.currentViewSessionId) {
+    dlog("refresh", "manual refresh sid=" + state.currentViewSessionId.slice(0,8));
     loadConversation(state.currentViewSessionId);
   }
   loadSessions();
