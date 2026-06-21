@@ -34,7 +34,6 @@
     display: flex;
     height: 100vh;
     overflow: hidden;
-    user-select: none;
   }
 
   /* ── Sidebar ─────────────────────────────────────────── */
@@ -67,11 +66,9 @@
     border-radius: 50%;
     background: var(--green);
     margin-left: auto;
-    animation: pulse 2s infinite;
   }
   .sidebar-header .active-dot.busy { background: var(--yellow); }
-  .sidebar-header .active-dot.offline { background: var(--red); animation: none; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .sidebar-header .active-dot.offline { background: var(--red); }
 
   .sidebar-search {
     padding: 10px 16px;
@@ -867,12 +864,31 @@ async function sendMessage() {
   // Try direct CLI send first
   const direct = await sendToCli(message);
   if (direct?.direct) {
-    // Message sent directly to managed CLI — response comes via WS
+    // Message sent directly to managed CLI — poll for JSONL updates
     state.sending = false;
     sendBtn.disabled = false;
     sendBtn.textContent = '发送';
     document.getElementById('statusSend').style.display = 'none';
     ta.focus();
+    // Poll for response (file size change) over next 30s
+    let polls = 0;
+    const pollForResponse = async () => {
+      if (polls++ > 15) return;
+      const d = await API('/api/poll');
+      const newSize = d.sessionSizes?.[state.currentViewSessionId];
+      const oldSize = state.lastSessionSizes[state.currentViewSessionId];
+      if (newSize !== oldSize) {
+        state.lastSessionSizes[state.currentViewSessionId] = newSize;
+        state.lastMsgCount = 0;
+        await loadConversation(state.currentViewSessionId, false);
+        // Remove optimistic message
+        const opt = document.querySelector('.msg.optimistic');
+        if (opt) opt.remove();
+      } else {
+        setTimeout(pollForResponse, 2000);
+      }
+    };
+    setTimeout(pollForResponse, 2000);
     return;
   }
 
@@ -918,9 +934,9 @@ async function sendMessage() {
 function showOptimisticMessage(text) {
   const container = document.getElementById('chatContainer');
   const div = document.createElement('div');
-  div.className = 'msg user';
+  div.className = 'msg user optimistic';
   div.style.opacity = '0.5';
-  div.innerHTML = `<div class="role-label">You (发送中)</div><div class="content">${mdToHtml(text)}</div>`;
+  div.innerHTML = `<div class="role-label">You</div><div class="content">${mdToHtml(text)}</div>`;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
